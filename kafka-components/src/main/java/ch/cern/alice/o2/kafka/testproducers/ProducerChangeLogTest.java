@@ -24,33 +24,27 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.Arrays;
 
-import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
-import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 
-import java.lang.Math;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import ch.cern.alice.o2.kafka.utils.ToolsUtils;
 import ch.cern.alice.o2.kafka.utils.ThroughputThrottler;
+import ch.cern.alice.o2.kafka.utils.ToolsUtils;
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.ArgumentParserException;
+import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
+import net.sourceforge.argparse4j.inf.Namespace;
 
-public class ProducerMath {
+public class ProducerChangeLogTest {
 	//java -cp kafka-streams-o2-0.1-jar-with-dependencies.jar ch.cern.alice.o2.kafka.producers.Producer --record-size 100 
 	//--producer-props bootstrap.servers=aido2qc41:9092,aido2qc42:9092,aido2qc43:9092 ack=0 retries=0 linger.ms=1 
 	// buffer.memory=67108864 batch.size=262144 --topic test3p2r --num-records 6000000 --throughput 200000
@@ -124,20 +118,38 @@ public class ProducerMath {
             long startMs = System.currentTimeMillis();
             ThroughputThrottler throttler = new ThroughputThrottler(throughput, startMs);
 
+            long meas_size = 50;
+            long host_tag_size = 50-1;
+            long card_tag_size = 30;
             int currentTransactionSize = 0;
             long transactionStartTime = 0;
-            double freq = 1;
-            double A = 1;
-            double y = 0;
-            double t = 0;
-            for (long i = 0; i < numRecords; i++) {
+            long i3 = 0;
+            long i2 = 0;
+            int field1 = 0;
+            long module = 19917;
+            for (long i = 1; i < numRecords; i++) {
                 if (transactionsEnabled && currentTransactionSize == 0) {
                     producer.beginTransaction();
                     transactionStartTime = System.currentTimeMillis();
                 }
 
-                y = i%2;
-                String msg = "meas"+i%49+",hostname=host_"+i%37+ ",cardid=card_"+i%19+" field0="+y+",field1="+y+",field2="+y+",field3="+y+",field4="+y+",field5="+y;
+                long i4 = i % card_tag_size;
+                if (i4 == 0){
+                    i3++;
+                    if( i3 > host_tag_size){
+                        i3 = 0;
+                        i2++;
+                        if(i2 > meas_size)
+                            i2 = 0;
+                    }
+                }
+
+                if(i%module == 0){
+                    field1 = 1;
+                }
+
+                String msg = "meas"+i2+",hostname=host_"+i3+ ",cardid=card_"+i4+" field1="+field1+"i,field2=0i";
+                field1=0;
                 msg += " "+Long.toString(System.currentTimeMillis())+"000000";
                 byte[] payload = msg.getBytes();
                 
@@ -156,7 +168,6 @@ public class ProducerMath {
                 if (throttler.shouldThrottle(i, sendStartMs)) {
                     throttler.throttle();
                 }
-
             }
 
             if (transactionsEnabled && currentTransactionSize != 0)

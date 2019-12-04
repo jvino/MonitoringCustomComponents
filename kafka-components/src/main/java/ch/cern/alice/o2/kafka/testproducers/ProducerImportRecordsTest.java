@@ -24,33 +24,27 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.Arrays;
 
-import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
-import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
 
-import java.lang.Math;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import ch.cern.alice.o2.kafka.utils.ToolsUtils;
 import ch.cern.alice.o2.kafka.utils.ThroughputThrottler;
+import ch.cern.alice.o2.kafka.utils.ToolsUtils;
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.ArgumentParserException;
+import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
+import net.sourceforge.argparse4j.inf.Namespace;
 
-public class ProducerMath {
+public class ProducerImportRecordsTest {
 	//java -cp kafka-streams-o2-0.1-jar-with-dependencies.jar ch.cern.alice.o2.kafka.producers.Producer --record-size 100 
 	//--producer-props bootstrap.servers=aido2qc41:9092,aido2qc42:9092,aido2qc43:9092 ack=0 retries=0 linger.ms=1 
 	// buffer.memory=67108864 batch.size=262144 --topic test3p2r --num-records 6000000 --throughput 200000
@@ -71,6 +65,8 @@ public class ProducerMath {
             boolean shouldPrintMetrics = res.getBoolean("printMetrics");
             long transactionDurationMs = res.getLong("transactionDurationMs");
             boolean transactionsEnabled =  0 < transactionDurationMs;
+            int recordType = res.getInt("recordType");
+
 
             // since default value gets printed with the help text, we are escaping \n there and replacing it with correct value here.
             String payloadDelimiter = res.getString("payloadDelimiter").equals("\\n") ? "\n" : res.getString("payloadDelimiter");
@@ -124,22 +120,49 @@ public class ProducerMath {
             long startMs = System.currentTimeMillis();
             ThroughputThrottler throttler = new ThroughputThrottler(throughput, startMs);
 
+            long meas_size = 4;
+            long host_tag_size = 4;
+            long card_tag_size = 2;
             int currentTransactionSize = 0;
             long transactionStartTime = 0;
-            double freq = 1;
-            double A = 1;
-            double y = 0;
-            double t = 0;
-            for (long i = 0; i < numRecords; i++) {
+            long i3 = 0;
+            long i2 = 0;
+
+            String msg = "";
+            
+            switch(recordType){
+                case 0: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldInt=1i "; 
+                    break;
+                case 1: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldString=\"qwe asd zxc asd qwe\" "; 
+                    break;
+                case 2: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldInt=1i,fieldDouble=1234.04 "; 
+                    break;
+                case 3: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldint=1i,fieldString=\"qwe asd zxc asd qwe\" ";
+                    break;
+                case 4: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldint=1i,fieldString=\"qwe asd zxc asd qwe\",fieldDouble=123.234,fieldBool=true ";
+                    break;
+                case 5: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldint=1i,fieldString=\"qwe asd zxc asd qwe\",fieldDouble=123.234,fieldBool=true,fieldint2=1i,fieldString2=\"qwe asd zxc asd qwe\",fieldDouble2=123.234,fieldBool2=true ";
+                    break;
+                case 6:
+                default: 
+                    msg = ",tag1=tvalue1,tag2=tbalue2 fieldint1=1i,fieldString1=\"qwe asd zxc asd qwe\",fieldDouble1=123.234,fieldBool1=true,fieldint2=1i,fieldString2=\"qwe asd zxc asd qwe\",fieldDouble2=123.234,fieldBool2=true,fieldint3=1i,fieldString3=\"qwe asd zxc asd qwe\",fieldDouble3=123.234,fieldBool3=true,fieldint4=1i,fieldString4=\"qwe asd zxc asd qwe\",fieldDouble4=123.234,fieldBool4=true ";
+                    break;
+            }
+
+            System.out.println("msg: "+msg);
+            for (long i = 1; i < numRecords; i++) {
                 if (transactionsEnabled && currentTransactionSize == 0) {
                     producer.beginTransaction();
                     transactionStartTime = System.currentTimeMillis();
                 }
 
-                y = i%2;
-                String msg = "meas"+i%49+",hostname=host_"+i%37+ ",cardid=card_"+i%19+" field0="+y+",field1="+y+",field2="+y+",field3="+y+",field4="+y+",field5="+y;
-                msg += " "+Long.toString(System.currentTimeMillis())+"000000";
-                byte[] payload = msg.getBytes();
+                byte[] payload = ("meas"+ i%120 + msg + Long.toString(System.currentTimeMillis())+"000000").getBytes();
                 
                 record = new ProducerRecord<byte[], byte[]>(topicName, payload);
 
@@ -156,7 +179,6 @@ public class ProducerMath {
                 if (throttler.shouldThrottle(i, sendStartMs)) {
                     throttler.throttle();
                 }
-
             }
 
             if (transactionsEnabled && currentTransactionSize != 0)
@@ -226,7 +248,15 @@ public class ProducerMath {
 		        .type(Integer.class)
 		        .metavar("RECORD-SIZE")
 		        .dest("recordSize")
-		        .help("message size in bytes. Note that you must provide exactly one of --record-size or --payload-file.");
+                .help("message size in bytes. Note that you must provide exactly one of --record-size or --payload-file.");
+                
+        payloadOptions.addArgument("--record-type")
+		        .action(store())
+		        .required(false)
+		        .type(Integer.class)
+		        .metavar("RECORD-SIZE")
+		        .dest("recordType")
+		        .help("message type for test");
 
 
         payloadOptions.addArgument("--payload-file")
