@@ -44,7 +44,7 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 import java.net.SocketException;
 import java.io.File;
 
-import ch.cern.alice.o2.kafka.utils.KafkaLineProtocol;
+//import ch.cern.alice.o2.kafka.utils.KafkaLineProtocol;
 import ch.cern.alice.o2.kafka.utils.YamlInfluxdbUdpConsumer;
 
 public class InfluxdbUdpConsumer {
