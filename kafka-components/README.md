@@ -320,11 +320,11 @@ Tab. 5
 | *sender* | - | Yes | Defines the start of 'sender' configuration section | 
 | *sender* | *hostname* | Yes | InfluxDB instance hostname | 
 | *sender* | *port* | Yes | InfluxDB instance port | 
-| *stats* | - | Yes | Defines the start of 'stats' configuration section | 
+| *stats* | - | No | Defines the start of 'stats' configuration section | 
 | *stats* | *enabled* | Yes | Set `true` to enable the self-monitoring functionality | 
 | *stats*  | *hostname* | No | Endpoint hostname | 
 | *stats*  | *port*   | No | Endpoint port |
-| *stats*  | *period_ms* | No | Statistic report period |
+| *stats*  | *period.s* | No | Statistic report period |
 
 ### Mattermost Consumer
 This component retrieves messages from the Kafka cluster and forward them to the HTTP Mattermost endpoint. 
