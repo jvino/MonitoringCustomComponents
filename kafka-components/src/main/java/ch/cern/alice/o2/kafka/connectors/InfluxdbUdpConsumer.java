@@ -71,26 +71,27 @@ public class InfluxdbUdpConsumer {
 	private static final String DEFAULT_STATS_TYPE = STATS_TYPE_INFLUXDB;
 
 	/* Kafka consumer parameters */
-	private static final String DEFAULT_AUTO_OFFSET_RESET = "latest";
-	private static final String DEFAULT_FETCH_MIN_BYTES = "1";
-	private static final String DEFAULT_RECEIVE_BUFFER_BYTES = "262144";
-	private static final String DEFAULT_MAX_POLL_RECORDS = "1000000";
-	private static final String DEFAULT_ENABLE_AUTO_COMMIT_CONFIG = "true";
-	private static final String DEFAULT_GROUP_ID_CONFIG = "influxdb-udp-consumer";
-	private static final int POLLING_PERIOD_MS = 50;
+	static final String DEFAULT_AUTO_OFFSET_RESET = "latest";
+	static final String DEFAULT_FETCH_MIN_BYTES = "1";
+	static final String DEFAULT_RECEIVE_BUFFER_BYTES = "262144";
+	static final String DEFAULT_MAX_POLL_RECORDS = "1000000";
+	static final String DEFAULT_ENABLE_AUTO_COMMIT_CONFIG = "true";
+	static final String DEFAULT_GROUP_ID_CONFIG = "influxdb-udp-consumer";
+	static final int POLLING_PERIOD_MS = 50;
 
-	private static final String GENERAL_LOG4J_CONFIG = "log4jfilename";
-	private static final String KAFKA_TOPIC_CONFIG = "topic.input";
-	private static final String SENDER_HOSTNAME_CONFIG = "hostname";
-	private static final String SENDER_PORTS_CONFIG = "ports";
-	private static final String STATS_HOSTNAME_CONFIG = "hostname";
-	private static final String STATS_PORT_CONFIG = "port";
-	private static final String STATS_PERIOD_S = "period.s";
+	static final String GENERAL_LOG4J_CONFIG = "log4jfilename";
+	static final String KAFKA_TOPIC_CONFIG = "topic.input";
+	static final String SENDER_HOSTNAME_CONFIG = "hostname";
+	static final String SENDER_PORTS_CONFIG = "ports";
+	static final String STATS_HOSTNAME_CONFIG = "hostname";
+	static final String STATS_PORT_CONFIG = "port";
+	static final String STATS_PERIOD_S = "period.s";
 
 	static Map<String, String> general_config = null;
 	static Map<String, String> kafka_config = null;
 	static Map<String, String> sender_config = null;
 	static Map<String, String> stats_config = null;
+	static Properties props = new Properties();
 
 	private static void importYamlConfiguration(String filename) throws IOException {
 		File confFile = new File(filename);
@@ -126,39 +127,58 @@ public class InfluxdbUdpConsumer {
 		setStatsConfiguration(stats_config);
 	}
 
-	private static Map<String,String> getGeneralConfig(){
+	public String getSenderHostname(){
+		return data_endpoint_hostname;
+	}
+
+	public int[] getSenderPorts(){
+		return data_endpoint_ports;
+	}
+
+	public Properties getKafkaProp() {
+		return props;
+	}
+
+	public Map<String, String> getGeneralConfig() {
 		return general_config;
 	}
 
-	private static Map<String,String> getKafkaConfig(){
+
+	public Map<String, String> getKafkaConfig() {
 		return kafka_config;
 	}
 
-	private static Map<String,String> getSenderConfig(){
+	public Map<String, String> getSenderConfig() {
 		return sender_config;
 	}
 
-	private static Map<String,String> getStatsConfig(){
+	public Map<String, String> getStatsConfig() {
 		return stats_config;
 	}
 
-	private static boolean getStatsEnable(){
+	public boolean getStatsEnable() {
 		return stats_enabled;
 	}
 
-	private static void setGeneralConfiguration( Map<String,String> general_config) throws Exception {
-		if( !general_config.containsKey(GENERAL_LOG4J_CONFIG)){
-			throw new Exception("Configuration file - general section - does not contain '"+GENERAL_LOG4J_CONFIG+"' key");
+	public static boolean setGeneralConfiguration(Map<String, String> general_config) throws Exception {
+		if (!general_config.containsKey(GENERAL_LOG4J_CONFIG)) {
+			throw new Exception(
+					"Configuration file - general section - does not contain '" + GENERAL_LOG4J_CONFIG + "' key");
 		}
 		String log4jfilename = general_config.get(GENERAL_LOG4J_CONFIG);
-		if( ! new File(log4jfilename).exists()){
-			throw new IOException("Log configuration file '"+log4jfilename+"' does not exist");
+		if (!new File(log4jfilename).exists()) {
+			throw new IOException("Log configuration file '" + log4jfilename + "' does not exist");
 		} else {
 			PropertyConfigurator.configure(log4jfilename);
+			return true;
 		}
 	}
 
-	private static void setKafkaConfiguration( Map<String,String> kafka_consumer_config) throws Exception {
+	public String getInputTopic() {
+		return topicName;
+	}
+
+	public static void setKafkaConfiguration(Map<String, String> kafka_consumer_config) throws Exception {
 		if( !kafka_consumer_config.containsKey(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)){
 			throw new Exception("Configuration file - kafka section - does not contain '"+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+"' key");
 		}
@@ -167,15 +187,14 @@ public class InfluxdbUdpConsumer {
 		}
 		topicName = kafka_consumer_config.get(KAFKA_TOPIC_CONFIG);
 		
-		String groupId = kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG,DEFAULT_GROUP_ID_CONFIG)
+		String groupId = kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG,DEFAULT_GROUP_ID_CONFIG);
 		String enableAutoCommit = kafka_consumer_config.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, DEFAULT_ENABLE_AUTO_COMMIT_CONFIG);
-		String boostrapServers = kafka_consumer_config.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)
+		String boostrapServers = kafka_consumer_config.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG);
 		String autoOffsetReset = kafka_consumer_config.getOrDefault(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, DEFAULT_AUTO_OFFSET_RESET);
 		String fetchMinBytes = kafka_consumer_config.getOrDefault(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, DEFAULT_FETCH_MIN_BYTES);
 		String receiveBuffer = kafka_consumer_config.getOrDefault(ConsumerConfig.RECEIVE_BUFFER_CONFIG, DEFAULT_RECEIVE_BUFFER_BYTES);
 		String maxPollRecords = kafka_consumer_config.getOrDefault(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, DEFAULT_MAX_POLL_RECORDS);
 
-		Properties props = new Properties();
 		props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
 		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
@@ -201,7 +220,7 @@ public class InfluxdbUdpConsumer {
 		consumer.subscribe(Collections.singletonList(topicName));
 	}
 
-	private static void setSenderConfiguration( Map<String,String> sender_config) throws Exception {
+	public static void setSenderConfiguration( Map<String,String> sender_config) throws Exception {
 		if(!sender_config.containsKey(SENDER_HOSTNAME_CONFIG)){
 			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_HOSTNAME_CONFIG+"' key");
 		}
@@ -227,7 +246,7 @@ public class InfluxdbUdpConsumer {
 		}
 	}
 
-	private static void setStatsConfiguration( Map<String,String> stats_config){
+	public static void setStatsConfiguration( Map<String,String> stats_config){
 		if( stats_config == null){
 			stats_enabled = false;
 			return;
@@ -267,7 +286,7 @@ public class InfluxdbUdpConsumer {
 		}
 	}
 
-	private static void run(){
+	public static void run(){
 		while (true) {
 			try {
 				ConsumerRecords<byte[], byte[]> consumerRecords = consumer.poll(POLLING_PERIOD_MS);
