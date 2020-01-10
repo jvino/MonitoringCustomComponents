@@ -44,13 +44,12 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 import java.net.SocketException;
 import java.io.File;
 
-import ch.cern.alice.o2.kafka.utils.KafkaLineProtocol;
 import ch.cern.alice.o2.kafka.utils.YamlInfluxdbUdpConsumer;
 
 public class InfluxdbUdpConsumer {
-	private static Logger logger = LoggerFactory.getLogger(InfluxdbUdpConsumer.class); 
+	private static Logger logger = LoggerFactory.getLogger(InfluxdbUdpConsumer.class);
 	private static String data_endpoint_port_str = "";
-	private static int [] data_endpoint_ports = null;
+	private static int[] data_endpoint_ports = null;
 	private static int data_endpoint_ports_size = 0;
 	private static int data_endpoint_ports_index = 0;
 	private static int stats_endpoint_port = 0;
@@ -59,22 +58,18 @@ public class InfluxdbUdpConsumer {
 	private static long stats_period_ms = 0;
 	private static long startMs = 0;
 	private static String stats_type;
-	private static String data_endpoint_hostname =  null;
+	private static String data_endpoint_hostname = null;
 	private static InetAddress data_address = null;
 	private static InetAddress stats_address = null;
 	private static DatagramSocket datagramSocket;
 	private static String topicName = "";
-	
+	private static boolean stats_enabled;
+	private static KafkaConsumer<byte[], byte[]> consumer = null;
+
 	/* Stats parameters */
 	private static final String STATS_TYPE_INFLUXDB = "influxdb";
 	private static final String DEFAULT_STATS_TYPE = STATS_TYPE_INFLUXDB;
-	private static final String DEFAULT_STATS_PERIOD = "10000";
-	private static final String DEFAULT_STATS_ENABLED = "false";
-	
-	/* UDP sender parameters */
-	private static final String DEFAULT_HOSTNAME = "localhost";
-	private static final String DEFAULT_PORT = "8089";
-	
+
 	/* Kafka consumer parameters */
 	private static final String DEFAULT_AUTO_OFFSET_RESET = "latest";
 	private static final String DEFAULT_FETCH_MIN_BYTES = "1";
@@ -83,90 +78,203 @@ public class InfluxdbUdpConsumer {
 	private static final String DEFAULT_ENABLE_AUTO_COMMIT_CONFIG = "true";
 	private static final String DEFAULT_GROUP_ID_CONFIG = "influxdb-udp-consumer";
 	private static final int POLLING_PERIOD_MS = 50;
-	
-	public static void main(String[] args) throws Exception {
-        String stats_endpoint_hostname = null;
-        startMs = System.currentTimeMillis(); 
+
+	private static final String GENERAL_LOG4J_CONFIG = "log4jfilename";
+	private static final String KAFKA_TOPIC_CONFIG = "topic.input";
+	private static final String SENDER_HOSTNAME_CONFIG = "hostname";
+	private static final String SENDER_PORTS_CONFIG = "ports";
+	private static final String STATS_HOSTNAME_CONFIG = "hostname";
+	private static final String STATS_PORT_CONFIG = "port";
+	private static final String STATS_PERIOD_S = "period.s";
+
+	static Map<String, String> general_config = null;
+	static Map<String, String> kafka_config = null;
+	static Map<String, String> sender_config = null;
+	static Map<String, String> stats_config = null;
+
+	private static void importYamlConfiguration(String filename) throws IOException {
+		File confFile = new File(filename);
+		if (!confFile.exists()) { 
+			throw new IOException("Configuration file does not exist.");
+		}
+		/* Parse yaml configuration file */
+		ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+		YamlInfluxdbUdpConsumer config = mapper.readValue(confFile, YamlInfluxdbUdpConsumer.class);
+		general_config = config.getGeneral();
+		kafka_config = config.getKafka_consumer_config();
+		sender_config = config.getSender_config();
+		stats_config = config.getStats_config();
+
+		try {
+			setGeneralConfiguration(general_config);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			System.exit(1);
+		}
+		try {
+			setKafkaConfiguration(kafka_config);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			System.exit(1);
+		}
+		try {
+			setSenderConfiguration(sender_config);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			System.exit(1);
+		}
+		setStatsConfiguration(stats_config);
+	}
+
+	private static Map<String,String> getGeneralConfig(){
+		return general_config;
+	}
+
+	private static Map<String,String> getKafkaConfig(){
+		return kafka_config;
+	}
+
+	private static Map<String,String> getSenderConfig(){
+		return sender_config;
+	}
+
+	private static Map<String,String> getStatsConfig(){
+		return stats_config;
+	}
+
+	private static boolean getStatsEnable(){
+		return stats_enabled;
+	}
+
+	private static void setGeneralConfiguration( Map<String,String> general_config) throws Exception {
+		if( !general_config.containsKey(GENERAL_LOG4J_CONFIG)){
+			throw new Exception("Configuration file - general section - does not contain '"+GENERAL_LOG4J_CONFIG+"' key");
+		}
+		String log4jfilename = general_config.get(GENERAL_LOG4J_CONFIG);
+		if( ! new File(log4jfilename).exists()){
+			throw new IOException("Log configuration file '"+log4jfilename+"' does not exist");
+		} else {
+			PropertyConfigurator.configure(log4jfilename);
+		}
+	}
+
+	private static void setKafkaConfiguration( Map<String,String> kafka_consumer_config) throws Exception {
+		if( !kafka_consumer_config.containsKey(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)){
+			throw new Exception("Configuration file - kafka section - does not contain '"+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+"' key");
+		}
+		if( !kafka_consumer_config.containsKey(KAFKA_TOPIC_CONFIG)){
+			throw new Exception("Configuration file - kafka section - does not contain '"+KAFKA_TOPIC_CONFIG+"' key");
+		}
+		topicName = kafka_consumer_config.get(KAFKA_TOPIC_CONFIG);
 		
-        /* Parse command line argumets */
-        ArgumentParser parser = argParser();
-        Namespace res = parser.parseArgs(args);
-        String config_filename = res.getString("config");
-        
-        /* Parse yaml configuration file */
-        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-        YamlInfluxdbUdpConsumer config = mapper.readValue( new File(config_filename), YamlInfluxdbUdpConsumer.class);
-        String log4jfilename = config.getGeneral().get("log4jfilename");
-        PropertyConfigurator.configure(log4jfilename);
-        Map<String,String> kafka_consumer_config = config.getKafka_consumer_config();
-        Map<String,String> sender_config = config.getSender_config();
-        Map<String,String> stats_config = config.getStats_config();
-        topicName = kafka_consumer_config.get("topic");
-		data_endpoint_hostname = sender_config.getOrDefault("hostname",DEFAULT_HOSTNAME);
-		data_endpoint_port_str = sender_config.getOrDefault("port",DEFAULT_PORT);
-        String[] data_endpoint_ports_str = data_endpoint_port_str.split(",");
+		String groupId = kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG,DEFAULT_GROUP_ID_CONFIG)
+		String enableAutoCommit = kafka_consumer_config.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, DEFAULT_ENABLE_AUTO_COMMIT_CONFIG);
+		String boostrapServers = kafka_consumer_config.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)
+		String autoOffsetReset = kafka_consumer_config.getOrDefault(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, DEFAULT_AUTO_OFFSET_RESET);
+		String fetchMinBytes = kafka_consumer_config.getOrDefault(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, DEFAULT_FETCH_MIN_BYTES);
+		String receiveBuffer = kafka_consumer_config.getOrDefault(ConsumerConfig.RECEIVE_BUFFER_CONFIG, DEFAULT_RECEIVE_BUFFER_BYTES);
+		String maxPollRecords = kafka_consumer_config.getOrDefault(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, DEFAULT_MAX_POLL_RECORDS);
+
+		Properties props = new Properties();
+		props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, enableAutoCommit);
+		props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, boostrapServers);
+		props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset);
+		props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, fetchMinBytes);
+		props.put(ConsumerConfig.RECEIVE_BUFFER_CONFIG, receiveBuffer);
+		props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords);
+
+		logger.info("Kafka configuration. Input topic :"+topicName);
+		logger.info("Kafka configuration. "+ConsumerConfig.GROUP_ID_CONFIG+" :"+groupId);
+		logger.info("Kafka configuration. "+ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG+" :"+ByteArrayDeserializer.class.getName());
+		logger.info("Kafka configuration. "+ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG+" :"+ByteArrayDeserializer.class.getName());
+		logger.info("Kafka configuration. "+ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG+" :"+enableAutoCommit);
+		logger.info("Kafka configuration. "+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+" :"+boostrapServers);
+		logger.info("Kafka configuration. "+ConsumerConfig.AUTO_OFFSET_RESET_CONFIG+" :"+autoOffsetReset);
+		logger.info("Kafka configuration. "+ConsumerConfig.FETCH_MIN_BYTES_CONFIG+" :"+fetchMinBytes);
+		logger.info("Kafka configuration. "+ConsumerConfig.RECEIVE_BUFFER_CONFIG+" :"+receiveBuffer);
+		logger.info("Kafka configuration. "+ConsumerConfig.MAX_POLL_RECORDS_CONFIG+" :"+maxPollRecords);
+		
+		consumer = new KafkaConsumer<byte[],byte[]>(props);
+		consumer.subscribe(Collections.singletonList(topicName));
+	}
+
+	private static void setSenderConfiguration( Map<String,String> sender_config) throws Exception {
+		if(!sender_config.containsKey(SENDER_HOSTNAME_CONFIG)){
+			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_HOSTNAME_CONFIG+"' key");
+		}
+		if(!sender_config.containsKey(SENDER_PORTS_CONFIG)){
+			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_PORTS_CONFIG+"' key");
+		}
+		data_endpoint_hostname = sender_config.get(SENDER_HOSTNAME_CONFIG);
+		data_endpoint_port_str = sender_config.get(SENDER_PORTS_CONFIG);
+		String[] data_endpoint_ports_str = data_endpoint_port_str.split(",");
         data_endpoint_ports = new int[data_endpoint_ports_str.length];
         for( int i=0; i < data_endpoint_ports_str.length; i++) {
           	data_endpoint_ports[i] = Integer.parseInt(data_endpoint_ports_str[i]);
         }
         data_endpoint_ports_size = data_endpoint_ports_str.length;
-        
-        boolean stats_enabled = Boolean.valueOf(stats_config.getOrDefault("enabled", DEFAULT_STATS_ENABLED));
-        stats_type = DEFAULT_STATS_TYPE;
-        stats_endpoint_hostname = stats_config.getOrDefault("hostname", DEFAULT_HOSTNAME);
-        stats_endpoint_port = Integer.parseInt(stats_config.getOrDefault("port", DEFAULT_PORT));
-        stats_period_ms = Integer.parseInt(stats_config.getOrDefault("period_ms", DEFAULT_STATS_PERIOD));
-        
 		logger.info("Data Endpoint Hostname: "+ data_endpoint_hostname);
 		logger.info("Data Endpoint Port(s): " + data_endpoint_port_str);
-        logger.info("Stats Enabled?: "+ stats_enabled);
-        
-        /* UDP Configuration */
-        try {
-          	data_address = InetAddress.getByName(data_endpoint_hostname);
-        } catch (IOException e) {
-          	logger.error("Error opening creation address using hostname: "+data_endpoint_hostname, e);
-        }
-        
-       	try {
+
+		try {
+			data_address = InetAddress.getByName(data_endpoint_hostname);
+		} catch (IOException e) {
+			logger.error("Error opening creation address using hostname: "+data_endpoint_hostname + ". Consumer crashed.", e);
+			System.exit(1);
+		}
+	}
+
+	private static void setStatsConfiguration( Map<String,String> stats_config){
+		if( stats_config == null){
+			stats_enabled = false;
+			return;
+		}
+		if( !stats_config.containsKey(STATS_HOSTNAME_CONFIG) && !stats_config.containsKey(STATS_PORT_CONFIG) && !stats_config.containsKey(STATS_PERIOD_S)){
+			stats_enabled = false;
+			return;
+		}
+		if( !stats_config.containsKey(STATS_HOSTNAME_CONFIG) || !stats_config.containsKey(STATS_PORT_CONFIG) || !stats_config.containsKey(STATS_PERIOD_S)){
+			stats_enabled = false;
+			logger.warn("Configuration File - stats section - not all the fields ['hostname','port','period.s'] are present");
+			return;
+		}
+
+		String stats_endpoint_hostname = stats_config.get(STATS_HOSTNAME_CONFIG);
+		stats_endpoint_port = Integer.parseInt(stats_config.get(STATS_PORT_CONFIG));
+		stats_period_ms = Integer.parseInt(stats_config.get(STATS_PERIOD_S))  * 1000;
+		stats_type = DEFAULT_STATS_TYPE;
+			
+		try {
 			datagramSocket = new DatagramSocket();
 		} catch (SocketException e) {
-			logger.error("Error while creating UDP socket", e);
+			logger.error("Error while creating UDP socket. Internal monitoring disabled.", e);
+			stats_enabled = false;
+			return;
 		}
-        
-        if( stats_enabled ) {
-			logger.info("Stats Endpoint Hostname: "+stats_endpoint_hostname);
-			logger.info("Stats Endpoint Port: "+stats_endpoint_port);
-			logger.info("Stats Period: "+stats_period_ms+"ms");
+		
+		logger.info("Stats Endpoint Hostname: "+stats_endpoint_hostname);
+		logger.info("Stats Endpoint Port: "+stats_endpoint_port);
+		logger.info("Stats Period: "+stats_period_ms+" ms");
+		try {
+			stats_address = InetAddress.getByName(stats_endpoint_hostname);
+		} catch (IOException e) {
+			logger.error("Error opening creation address using hostname: "+stats_endpoint_hostname + ". Internal monitoring disabled.", e);
+			stats_enabled = false;
+			return;
+		}
+	}
+
+	private static void run(){
+		while (true) {
 			try {
-				stats_address = InetAddress.getByName(stats_endpoint_hostname);
-			} catch (IOException e) {
-				logger.error("Error opening creation address using hostname: "+stats_endpoint_hostname, e);
-			}
-        }
-        
-        /* Configure Kafka consumer */
-        Properties props = new Properties();
-    	props.put(ConsumerConfig.GROUP_ID_CONFIG, kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG,DEFAULT_GROUP_ID_CONFIG));
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, DEFAULT_ENABLE_AUTO_COMMIT_CONFIG);
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka_consumer_config.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, kafka_consumer_config.getOrDefault(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, DEFAULT_AUTO_OFFSET_RESET));
-        props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, kafka_consumer_config.getOrDefault(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, DEFAULT_FETCH_MIN_BYTES));
-        props.put(ConsumerConfig.RECEIVE_BUFFER_CONFIG, kafka_consumer_config.getOrDefault(ConsumerConfig.RECEIVE_BUFFER_CONFIG, DEFAULT_RECEIVE_BUFFER_BYTES));
-        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, kafka_consumer_config.getOrDefault(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, DEFAULT_MAX_POLL_RECORDS));
-    	
-        KafkaConsumer<byte[],byte[]> consumer = new KafkaConsumer<byte[],byte[]>(props);
-		consumer.subscribe(Collections.singletonList(topicName));
-		     
-        while (true) {
-          	try {
-           		ConsumerRecords<byte[], byte[]> consumerRecords = consumer.poll(POLLING_PERIOD_MS);
-				receivedRecords += consumerRecords.count();
-				consumerRecords.forEach( record -> sendUdpData(record.value()));
-				//consumer.commitAsync();
-				if( stats_enabled ) stats();
+				ConsumerRecords<byte[], byte[]> consumerRecords = consumer.poll(POLLING_PERIOD_MS);
+			  	receivedRecords += consumerRecords.count();
+			  	consumerRecords.forEach( record -> sendUdpData(record.value()));
+			  	//consumer.commitAsync();
+			  	if( stats_enabled ) stats();
 			} catch (RetriableCommitFailedException e) {
 				logger.error("Kafka Consumer Committ Exception: ",e);
 				consumer.close();
@@ -176,8 +284,19 @@ public class InfluxdbUdpConsumer {
 				consumer.close();
 				break;
 			}
-		}
+	  	}
 	}
+	
+	public static void main(String[] args) throws Exception {
+        startMs = System.currentTimeMillis(); 
+		
+        /* Parse command line argumets */
+        ArgumentParser parser = argParser();
+        Namespace res = parser.parseArgs(args);
+        String config_filename = res.getString("config");
+		importYamlConfiguration(config_filename);
+		run();     
+    }
 	
 	private static void sendUdpData(byte[] data2send) {
 		if (data2send.length > 0){
