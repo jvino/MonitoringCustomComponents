@@ -319,7 +319,7 @@ Tab. 5
 | *Kafka_consumer* | *max.poll.records* | No | The maximum number of records returned in a single call | 1000000 |
 | *sender* | - | Yes | Defines the start of 'sender' configuration section | 
 | *sender* | *hostname* | Yes | InfluxDB instance hostname | 
-| *sender* | *port* | Yes | InfluxDB instance port | 
+| *sender* | *ports* | Yes | InfluxDB instance port | 
 | *stats* | - | No | Defines the start of 'stats' configuration section | 
 | *stats* | *enabled* | Yes | Set `true` to enable the self-monitoring functionality | 
 | *stats*  | *hostname* | No | Endpoint hostname | 
