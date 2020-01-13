@@ -9,25 +9,32 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import kafka.consumer.*;
-import kafka.javaapi.consumer.ConsumerConnector;
-import kafka.message.MessageAndMetadata;
-import kafka.serializer.StringDecoder;
-import kafka.server.KafkaConfig;
-import kafka.server.KafkaServerStartable;
-import org.apache.curator.test.TestingServer;
+import java.nio.file.Files;
+import org.I0Itec.zkclient.ZkClient;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import kafka.admin.AdminUtils;
+import kafka.admin.RackAwareMode;
+import kafka.server.KafkaConfig;
+import kafka.server.KafkaServer;
+import kafka.utils.MockTime;
+import kafka.utils.TestUtils;
+import org.apache.kafka.common.utils.Time;
+import kafka.utils.ZKStringSerializer$;
+import kafka.utils.ZkUtils;
+import kafka.zk.EmbeddedZookeeper;
+
+import ch.cern.alice.o2.kafka.connectors.InfluxdbUdpConsumer;
+import ch.cern.alice.o2.kafka.connectors.UdpListener;
 
 class InfluxdbUdpConsumerTest {
 
@@ -40,12 +47,15 @@ class InfluxdbUdpConsumerTest {
     String statsHostname = "localhost";
     String statsPorts = "1111";
     String statsPeriodS = "15";
+    String fakeFile = "fakefile";
+    String logFilePrefix = "/tmp/fakelogfile-";
+    String yamlFilePrefix = "/tmp/fake-yamlFile-";
 
     @Test
     void generalConfigurationBadLogKey() {
         InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
         Map<String, String> conf = new HashMap<String, String>();
-        conf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG + "#", "fakeFile");
+        conf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG + "#", fakeFile);
         Exception exception = assertThrows(Exception.class, () -> consumerUnderTest.setGeneralConfiguration(conf));
         assertEquals("Configuration file - general section - does not contain '"
                 + InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG + "' key", exception.getMessage());
@@ -55,7 +65,7 @@ class InfluxdbUdpConsumerTest {
     void generalConfigurationNoLogFile() {
         InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
         Map<String, String> conf = new HashMap<String, String>();
-        conf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG, "fakeFile");
+        conf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG, fakeFile);
         IOException exception = assertThrows(IOException.class, () -> consumerUnderTest.setGeneralConfiguration(conf));
         assertEquals("Log configuration file 'fakeFile' does not exist", exception.getMessage());
     }
@@ -65,7 +75,7 @@ class InfluxdbUdpConsumerTest {
         InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
         Map<String, String> conf = new HashMap<String, String>();
         int num = (int) (Math.random() * 100000);
-        String filename = "/tmp/fakelogfile-" + num;
+        String filename = logFilePrefix + num;
         File logFile = new File(filename);
         FileWriter myWriter;
         try {
@@ -193,8 +203,6 @@ class InfluxdbUdpConsumerTest {
         expectedKafkaProp.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         expectedKafkaProp.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         assertEquals(returnedKafkaPros, expectedKafkaProp);
-    
-    
     }
 
     @Test
@@ -303,7 +311,7 @@ class InfluxdbUdpConsumerTest {
     @Test
     void YamlConfigurationNoStats() {
         int num = (int) (Math.random() * 100000);
-        String yamlFilename = "/tmp/fake--yamlFile-" + num;
+        String yamlFilename = yamlFilePrefix + num;
         String logFilename = yamlFilename;
         File yamlFile = new File(yamlFilename);
         FileWriter myWriter;
@@ -380,9 +388,101 @@ class InfluxdbUdpConsumerTest {
         if (yamlFile.exists()) yamlFile.delete();
     }
 
+    @Test
+    public void producerTest() throws InterruptedException, IOException {
+        // delete tmp files and dirs
+        String ZKHOST = "127.0.0.1";
+        String BROKERHOST = "127.0.0.1";
+        String BROKERPORT = "9092";
+        String TOPIC = "test";
 
+        // setup Zookeeper
+        EmbeddedZookeeper zkServer = new EmbeddedZookeeper();
+        String zkConnect = ZKHOST + ":" + zkServer.port();
+        ZkClient zkClient = new ZkClient(zkConnect, 30000, 30000, ZKStringSerializer$.MODULE$);
+        ZkUtils zkUtils = ZkUtils.apply(zkClient, false);
 
+        // setup Broker
+        Properties brokerProps = new Properties();
+        brokerProps.setProperty("zookeeper.connect", zkConnect);
+        brokerProps.setProperty("broker.id", "0");
+        brokerProps.setProperty("log.dirs", Files.createTempDirectory("kafka-").toAbsolutePath().toString());
+        brokerProps.setProperty("listeners", "PLAINTEXT://" + BROKERHOST +":" + BROKERPORT);
+        brokerProps.setProperty("offsets.topic.replication.factor" , "1");
+        KafkaConfig config = new KafkaConfig(brokerProps);
+        Time mock = new MockTime();
+        KafkaServer kafkaServer = TestUtils.createServer(config, mock);
 
+        // create topic
+        AdminUtils.createTopic(zkUtils, TOPIC, 1, 1, new Properties(), RackAwareMode.Disabled$.MODULE$);
 
+        // setup producer
+        Properties producerProps = new Properties();
+        producerProps.setProperty("bootstrap.servers", BROKERHOST + ":" + BROKERPORT);
+        producerProps.setProperty("key.serializer","org.apache.kafka.common.serialization.StringSerializer");
+        producerProps.setProperty("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        KafkaProducer<String,String> producer = new KafkaProducer<String,String>(producerProps);
 
+        UdpListener rec1 = new UdpListener(10234);
+        UdpListener rec2 = new UdpListener(10235);
+        UdpListener rec3 = new UdpListener(10236);
+        UdpListener rec4 = new UdpListener(10237);
+        rec1.start();
+        rec2.start();
+        rec3.start();
+        rec4.start();
+
+        // setup consumer
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        int num = (int) (Math.random() * 100000);
+        String yamlFilename = "/tmp/fake--yamlFile-" + num;
+        String logFilename = yamlFilename;
+        File yamlFile = new File(yamlFilename);
+        FileWriter myWriter;
+        try {
+            myWriter = new FileWriter(yamlFilename);
+            myWriter.write("general:\n  log4jfilename: "+logFilename+"\n\n");
+            myWriter.write("kafka_consumer_config:\n  topic: "+TOPIC+"\n  bootstrap.servers: "+BROKERHOST+":"+BROKERPORT+"\n  auto.offset.reset: earliest\n\n");
+            myWriter.write("sender_config:\n  hostname: localhost\n  ports: 10234,10235,10236,10237\n\n");
+            myWriter.close();
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+        try {
+            consumerUnderTest.importYamlConfiguration(yamlFilename);
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+
+        // send message
+        for( int i = 0; i < 8; i++){
+            producer.send(new ProducerRecord<String,String>(TOPIC, null, "test"+i));
+        }
+        producer.close();
+        consumerUnderTest.test();
+
+        TimeUnit.SECONDS.sleep(1);
+        List<String> data1 = rec1.stopAndReturn();
+        List<String> data2 = rec2.stopAndReturn();
+        List<String> data3 = rec3.stopAndReturn();
+        List<String> data4 = rec4.stopAndReturn();
+        
+        assertEquals(2, data1.size(), "UDP packets received test");
+        assertEquals(2, data2.size(), "UDP packets received test");
+        assertEquals(2, data3.size(), "UDP packets received test");
+        assertEquals(2, data4.size(), "UDP packets received test");
+        assertTrue(data1.contains("test0"));
+        assertTrue(data2.contains("test1"));
+        assertTrue(data3.contains("test2"));
+        assertTrue(data4.contains("test3"));
+        assertTrue(data1.contains("test4"));
+        assertTrue(data2.contains("test5"));
+        assertTrue(data3.contains("test6"));
+        assertTrue(data4.contains("test7"));
+ 
+        kafkaServer.shutdown();
+        zkClient.close();
+        zkServer.shutdown();
+        if (yamlFile.exists()) yamlFile.delete();
+    }
 }

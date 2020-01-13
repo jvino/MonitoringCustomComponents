@@ -41,7 +41,7 @@ public class ToolsUtils {
                 MetricName mName = metric.metricName();
                 String mergedName = mName.group() + ":" + mName.name() + ":" + mName.tags();
                 maxLengthOfDisplayName = maxLengthOfDisplayName < mergedName.length() ? mergedName.length() : maxLengthOfDisplayName;
-                sortedMetrics.put(mergedName, metric.metricValue());
+                sortedMetrics.put(mergedName, metric.value());
             }
             String doubleOutputFormat = "%-" + maxLengthOfDisplayName + "s : %.3f";
             String defaultOutputFormat = "%-" + maxLengthOfDisplayName + "s : %s";

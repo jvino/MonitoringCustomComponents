@@ -39,11 +39,6 @@
         <scope>test</scope>
     </dependency>
     <dependency>
-    	<groupId>org.apache.kafka</groupId>
-    	<artifactId>kafka-clients</artifactId>
-    	<version>2.1.0</version>
-    </dependency>
-    <dependency>
     	<groupId>net.sourceforge.argparse4j</groupId>
     	<artifactId>argparse4j</artifactId>
     	<version>0.8.1</version>
@@ -54,14 +49,33 @@
     	<version>1.7.26</version>
     </dependency>
     <dependency>
-    	<groupId>net.sourceforge.argparse4j</groupId>
-    	<artifactId>argparse4j</artifactId>
-    	<version>0.8.1</version>
-    </dependency>
-    <dependency>
     	<groupId>org.apache.kafka</groupId>
     	<artifactId>kafka-streams</artifactId>
     	<version>2.1.1</version>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka_2.11</artifactId>
+        <version>2.1.1</version>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka_2.11</artifactId>
+        <version>2.1.1</version>
+        <classifier>test</classifier>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>2.1.1</version>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>2.1.1</version>
+        <classifier>test</classifier>
+        <scope>test</scope>
     </dependency>
     <dependency>
         <groupId>org.apache.commons</groupId>

@@ -33,6 +33,8 @@ import org.apache.log4j.PropertyConfigurator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.cern.alice.o2.kafka.utils.YamlInfluxdbUdpConsumer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
@@ -44,7 +46,7 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 import java.net.SocketException;
 import java.io.File;
 
-import ch.cern.alice.o2.kafka.utils.YamlInfluxdbUdpConsumer;
+
 
 public class InfluxdbUdpConsumer {
 	private static Logger logger = LoggerFactory.getLogger(InfluxdbUdpConsumer.class);
@@ -96,7 +98,7 @@ public class InfluxdbUdpConsumer {
 
 	public void importYamlConfiguration(String filename) throws IOException {
 		File confFile = new File(filename);
-		if (!confFile.exists()) { 
+		if (!confFile.exists()) {
 			throw new IOException("Configuration file does not exist.");
 		}
 		/* Parse yaml configuration file */
@@ -131,11 +133,11 @@ public class InfluxdbUdpConsumer {
 		setStatsConfiguration(stats_config);
 	}
 
-	public String getSenderHostname(){
+	public String getSenderHostname() {
 		return data_endpoint_hostname;
 	}
 
-	public int[] getSenderPorts(){
+	public int[] getSenderPorts() {
 		return data_endpoint_ports;
 	}
 
@@ -146,7 +148,6 @@ public class InfluxdbUdpConsumer {
 	public Map<String, String> getGeneralConfig() {
 		return general_config;
 	}
-
 
 	public Map<String, String> getKafkaConfig() {
 		return kafka_config;
@@ -164,7 +165,7 @@ public class InfluxdbUdpConsumer {
 		return stats_enabled;
 	}
 
-	public static boolean setGeneralConfiguration(Map<String, String> general_config) throws Exception {
+	public boolean setGeneralConfiguration(Map<String, String> general_config) throws Exception {
 		if (!general_config.containsKey(GENERAL_LOG4J_CONFIG)) {
 			throw new Exception(
 					"Configuration file - general section - does not contain '" + GENERAL_LOG4J_CONFIG + "' key");
@@ -182,25 +183,32 @@ public class InfluxdbUdpConsumer {
 		return topicName;
 	}
 
-	public static void setKafkaConfiguration(Map<String, String> kafka_consumer_config) throws Exception {
-		if(kafka_consumer_config == null){
+	public void setKafkaConfiguration(Map<String, String> kafka_consumer_config) throws Exception {
+		if (kafka_consumer_config == null) {
 			throw new Exception("Configuration file - kafka section - must be present");
 		}
-		if( !kafka_consumer_config.containsKey(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)){
-			throw new Exception("Configuration file - kafka section - does not contain '"+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+"' key");
+		if (!kafka_consumer_config.containsKey(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)) {
+			throw new Exception("Configuration file - kafka section - does not contain '"
+					+ ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG + "' key");
 		}
-		if( !kafka_consumer_config.containsKey(KAFKA_TOPIC_CONFIG)){
-			throw new Exception("Configuration file - kafka section - does not contain '"+KAFKA_TOPIC_CONFIG+"' key");
+		if (!kafka_consumer_config.containsKey(KAFKA_TOPIC_CONFIG)) {
+			throw new Exception(
+					"Configuration file - kafka section - does not contain '" + KAFKA_TOPIC_CONFIG + "' key");
 		}
 		topicName = kafka_consumer_config.get(KAFKA_TOPIC_CONFIG);
-		
-		String groupId = kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG,DEFAULT_GROUP_ID_CONFIG);
-		String enableAutoCommit = kafka_consumer_config.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, DEFAULT_ENABLE_AUTO_COMMIT_CONFIG);
+
+		String groupId = kafka_consumer_config.getOrDefault(ConsumerConfig.GROUP_ID_CONFIG, DEFAULT_GROUP_ID_CONFIG);
+		String enableAutoCommit = kafka_consumer_config.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,
+				DEFAULT_ENABLE_AUTO_COMMIT_CONFIG);
 		String boostrapServers = kafka_consumer_config.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG);
-		String autoOffsetReset = kafka_consumer_config.getOrDefault(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, DEFAULT_AUTO_OFFSET_RESET);
-		String fetchMinBytes = kafka_consumer_config.getOrDefault(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, DEFAULT_FETCH_MIN_BYTES);
-		String receiveBuffer = kafka_consumer_config.getOrDefault(ConsumerConfig.RECEIVE_BUFFER_CONFIG, DEFAULT_RECEIVE_BUFFER_BYTES);
-		String maxPollRecords = kafka_consumer_config.getOrDefault(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, DEFAULT_MAX_POLL_RECORDS);
+		String autoOffsetReset = kafka_consumer_config.getOrDefault(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
+				DEFAULT_AUTO_OFFSET_RESET);
+		String fetchMinBytes = kafka_consumer_config.getOrDefault(ConsumerConfig.FETCH_MIN_BYTES_CONFIG,
+				DEFAULT_FETCH_MIN_BYTES);
+		String receiveBuffer = kafka_consumer_config.getOrDefault(ConsumerConfig.RECEIVE_BUFFER_CONFIG,
+				DEFAULT_RECEIVE_BUFFER_BYTES);
+		String maxPollRecords = kafka_consumer_config.getOrDefault(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+				DEFAULT_MAX_POLL_RECORDS);
 
 		props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
@@ -212,83 +220,92 @@ public class InfluxdbUdpConsumer {
 		props.put(ConsumerConfig.RECEIVE_BUFFER_CONFIG, receiveBuffer);
 		props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords);
 
-		logger.info("Kafka configuration. Input topic :"+topicName);
-		logger.info("Kafka configuration. "+ConsumerConfig.GROUP_ID_CONFIG+" :"+groupId);
-		logger.info("Kafka configuration. "+ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG+" :"+ByteArrayDeserializer.class.getName());
-		logger.info("Kafka configuration. "+ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG+" :"+ByteArrayDeserializer.class.getName());
-		logger.info("Kafka configuration. "+ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG+" :"+enableAutoCommit);
-		logger.info("Kafka configuration. "+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+" :"+boostrapServers);
-		logger.info("Kafka configuration. "+ConsumerConfig.AUTO_OFFSET_RESET_CONFIG+" :"+autoOffsetReset);
-		logger.info("Kafka configuration. "+ConsumerConfig.FETCH_MIN_BYTES_CONFIG+" :"+fetchMinBytes);
-		logger.info("Kafka configuration. "+ConsumerConfig.RECEIVE_BUFFER_CONFIG+" :"+receiveBuffer);
-		logger.info("Kafka configuration. "+ConsumerConfig.MAX_POLL_RECORDS_CONFIG+" :"+maxPollRecords);
-		
-		consumer = new KafkaConsumer<byte[],byte[]>(props);
+		logger.info("Kafka configuration. Input topic :" + topicName);
+		logger.info("Kafka configuration. " + ConsumerConfig.GROUP_ID_CONFIG + ": " + groupId);
+		logger.info("Kafka configuration. " + ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG + ": "
+				+ ByteArrayDeserializer.class.getName());
+		logger.info("Kafka configuration. " + ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG + ": "
+				+ ByteArrayDeserializer.class.getName());
+		logger.info("Kafka configuration. " + ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG + ": " + enableAutoCommit);
+		logger.info("Kafka configuration. " + ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG + ": " + boostrapServers);
+		logger.info("Kafka configuration. " + ConsumerConfig.AUTO_OFFSET_RESET_CONFIG + ": " + autoOffsetReset);
+		logger.info("Kafka configuration. " + ConsumerConfig.FETCH_MIN_BYTES_CONFIG + ": " + fetchMinBytes);
+		logger.info("Kafka configuration. " + ConsumerConfig.RECEIVE_BUFFER_CONFIG + ": " + receiveBuffer);
+		logger.info("Kafka configuration. " + ConsumerConfig.MAX_POLL_RECORDS_CONFIG + ": " + maxPollRecords);
+
+		consumer = new KafkaConsumer<byte[], byte[]>(props);
 		consumer.subscribe(Collections.singletonList(topicName));
 	}
 
-	public static void setSenderConfiguration( Map<String,String> sender_config) throws Exception {
-		if(sender_config == null){
+	public void setSenderConfiguration(Map<String, String> sender_config) throws Exception {
+		if (sender_config == null) {
 			throw new Exception("Configuration file - sender section - must be present");
 		}
-		if(!sender_config.containsKey(SENDER_HOSTNAME_CONFIG)){
-			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_HOSTNAME_CONFIG+"' key");
+		if (!sender_config.containsKey(SENDER_HOSTNAME_CONFIG)) {
+			throw new Exception(
+					"Configuration file - sender section - does not contain '" + SENDER_HOSTNAME_CONFIG + "' key");
 		}
-		if(!sender_config.containsKey(SENDER_PORTS_CONFIG)){
-			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_PORTS_CONFIG+"' key");
+		if (!sender_config.containsKey(SENDER_PORTS_CONFIG)) {
+			throw new Exception(
+					"Configuration file - sender section - does not contain '" + SENDER_PORTS_CONFIG + "' key");
 		}
-		
+
 		data_endpoint_hostname = sender_config.get(SENDER_HOSTNAME_CONFIG);
 		data_endpoint_port_str = sender_config.get(SENDER_PORTS_CONFIG);
 		String[] data_endpoint_ports_str = data_endpoint_port_str.split(",");
-        data_endpoint_ports = new int[data_endpoint_ports_str.length];
-        for( int i=0; i < data_endpoint_ports_str.length; i++) {
-          	data_endpoint_ports[i] = Integer.parseInt(data_endpoint_ports_str[i]);
-        }
-        data_endpoint_ports_size = data_endpoint_ports_str.length;
-		logger.info("Data Endpoint Hostname: "+ data_endpoint_hostname);
+		data_endpoint_ports = new int[data_endpoint_ports_str.length];
+		for (int i = 0; i < data_endpoint_ports_str.length; i++) {
+			data_endpoint_ports[i] = Integer.parseInt(data_endpoint_ports_str[i]);
+		}
+		data_endpoint_ports_size = data_endpoint_ports_str.length;
+		logger.info("Data Endpoint Hostname: " + data_endpoint_hostname);
 		logger.info("Data Endpoint Port(s): " + data_endpoint_port_str);
 
 		try {
 			data_address = InetAddress.getByName(data_endpoint_hostname);
 		} catch (IOException e) {
-			logger.error("Error opening creation address using hostname: "+data_endpoint_hostname + ". Consumer crashed.", e);
+			logger.error(
+					"Error opening creation address using hostname: " + data_endpoint_hostname + ". Consumer crashed.",
+					e);
 			System.exit(1);
 		}
 	}
 
-	public String getStatsPeriodMs(){
-		return Long.toString(stats_period_ms); 
+	public String getStatsPeriodMs() {
+		return Long.toString(stats_period_ms);
 	}
 
-	public String getStatsPort(){
+	public String getStatsPort() {
 		return Integer.toString(stats_endpoint_port);
 	}
 
-	public String getStatsHostname(){
+	public String getStatsHostname() {
 		return stats_endpoint_hostname;
 	}
 
-	public static void setStatsConfiguration( Map<String,String> stats_config){
-		if( stats_config == null){
+	public void setStatsConfiguration(Map<String, String> stats_config) {
+		if (stats_config == null) {
 			stats_enabled = false;
 			return;
 		}
-		if( !stats_config.containsKey(STATS_HOSTNAME_CONFIG) && !stats_config.containsKey(STATS_PORT_CONFIG) && !stats_config.containsKey(STATS_PERIOD_S)){
+		if (!stats_config.containsKey(STATS_HOSTNAME_CONFIG) && !stats_config.containsKey(STATS_PORT_CONFIG)
+				&& !stats_config.containsKey(STATS_PERIOD_S)) {
 			stats_enabled = false;
 			return;
 		}
-		if( !stats_config.containsKey(STATS_HOSTNAME_CONFIG) || !stats_config.containsKey(STATS_PORT_CONFIG) || !stats_config.containsKey(STATS_PERIOD_S)){
+		if (!stats_config.containsKey(STATS_HOSTNAME_CONFIG) || !stats_config.containsKey(STATS_PORT_CONFIG)
+				|| !stats_config.containsKey(STATS_PERIOD_S)) {
 			stats_enabled = false;
-			logger.warn("Configuration File - stats section - not all the fields ['hostname','port','period.s'] are present");
+			logger.warn(
+					"Configuration File - stats section - not all the fields ['hostname','port','period.s'] are present");
 			return;
 		}
 
 		stats_endpoint_hostname = stats_config.get(STATS_HOSTNAME_CONFIG);
 		stats_endpoint_port = Integer.parseInt(stats_config.get(STATS_PORT_CONFIG));
-		stats_period_ms = Integer.parseInt(stats_config.get(STATS_PERIOD_S))  * 1000;
+		stats_period_ms = Integer.parseInt(stats_config.get(STATS_PERIOD_S)) * 1000;
 		stats_type = DEFAULT_STATS_TYPE;
-			
+
 		try {
 			datagramSocket = new DatagramSocket();
 		} catch (SocketException e) {
@@ -296,46 +313,64 @@ public class InfluxdbUdpConsumer {
 			stats_enabled = false;
 			return;
 		}
-		
-		logger.info("Stats Endpoint Hostname: "+stats_endpoint_hostname);
-		logger.info("Stats Endpoint Port: "+stats_endpoint_port);
-		logger.info("Stats Period: "+stats_period_ms+" ms");
+
+		logger.info("Stats Endpoint Hostname: " + stats_endpoint_hostname);
+		logger.info("Stats Endpoint Port: " + stats_endpoint_port);
+		logger.info("Stats Period: " + stats_period_ms + " ms");
 		try {
 			stats_address = InetAddress.getByName(stats_endpoint_hostname);
 		} catch (IOException e) {
-			logger.error("Error opening creation address using hostname: "+stats_endpoint_hostname + ". Internal monitoring disabled.", e);
+			logger.error("Error opening creation address using hostname: " + stats_endpoint_hostname
+					+ ". Internal monitoring disabled.", e);
 			stats_enabled = false;
 			return;
 		}
 	}
 
-	public static void run(){
+	public static void run() {
 		while (true) {
 			try {
 				ConsumerRecords<byte[], byte[]> consumerRecords = consumer.poll(POLLING_PERIOD_MS);
-			  	receivedRecords += consumerRecords.count();
-			  	consumerRecords.forEach( record -> sendUdpData(record.value()));
-			  	//consumer.commitAsync();
-			  	if( stats_enabled ) stats();
+				receivedRecords += consumerRecords.count();
+				consumerRecords.forEach(record -> sendUdpData(record.value()));
+				// consumer.commitAsync();
+				if (stats_enabled)
+					stats();
 			} catch (RetriableCommitFailedException e) {
-				logger.error("Kafka Consumer Committ Exception: ",e);
+				logger.error("Kafka Consumer Committ Exception: ", e);
 				consumer.close();
 				break;
 			} catch (Exception e) {
-				logger.error("Kafka Consumer Error: ",e);
+				logger.error("Kafka Consumer Error: ", e);
 				consumer.close();
 				break;
 			}
-	  	}
+		}
 	}
-	
-	public static void main(String[] args) throws Exception {
-        startMs = System.currentTimeMillis(); 
-		
-        /* Parse command line argumets */
-        ArgumentParser parser = argParser();
-        Namespace res = parser.parseArgs(args);
-        String config_filename = res.getString("config");
+
+	public void test() {
+		try {
+			ConsumerRecords<byte[], byte[]> consumerRecords = consumer.poll(5000);
+			receivedRecords += consumerRecords.count();
+			consumerRecords.forEach(record -> sendUdpData(record.value()));
+			if (stats_enabled)
+				stats();
+		} catch (RetriableCommitFailedException e) {
+			logger.error("Kafka Consumer Committ Exception: ", e);
+			consumer.close();
+		} catch (Exception e) {
+			logger.error("Kafka Consumer Error: ", e);
+			consumer.close();
+		}
+	}
+
+	public void main(String[] args) throws Exception {
+		startMs = System.currentTimeMillis();
+
+		/* Parse command line argumets */
+		ArgumentParser parser = argParser();
+		Namespace res = parser.parseArgs(args);
+		String config_filename = res.getString("config");
 		importYamlConfiguration(config_filename);
 		run();     
     }
@@ -343,11 +378,11 @@ public class InfluxdbUdpConsumer {
 	private static void sendUdpData(byte[] data2send) {
 		if (data2send.length > 0){
 			try {
-				if(++data_endpoint_ports_index >= data_endpoint_ports_size) data_endpoint_ports_index = 0;
 				int data_port = data_endpoint_ports[data_endpoint_ports_index];
 				DatagramPacket packet = new DatagramPacket(data2send, data2send.length, data_address, data_port );
 				datagramSocket.send(packet);
 				sentRecords++;
+				if(++data_endpoint_ports_index >= data_endpoint_ports_size) data_endpoint_ports_index = 0;
 		  	} catch (Exception e) {
 				logger.error("Error. Index: "+data_endpoint_ports_index+" size: "+data_endpoint_ports_size+" module: "+data_endpoint_ports_index%data_endpoint_ports_size,e);
 			}
