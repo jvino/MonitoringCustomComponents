@@ -19,7 +19,7 @@ This directory contains [Apache Kafka](https://kafka.apache.org) custom componen
 - Java > 1.8
 
 ### Version
-`export VERSION=0.3`
+`export VERSION=0.4.0`
 
 ### Build
 1. Clone repository
@@ -28,7 +28,7 @@ This directory contains [Apache Kafka](https://kafka.apache.org) custom componen
 ```
 2. Compile
 ```
- mvn clean -e install -DskipTests 
+ mvn clean -e install 
 ```
 
 The generated jar (`target/kafka-streams-o2-$VERSION-jar-with-dependencies.jar`) includes all components and dependencies.
