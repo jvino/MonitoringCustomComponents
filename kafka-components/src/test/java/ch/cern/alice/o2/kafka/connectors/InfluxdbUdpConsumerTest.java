@@ -67,7 +67,7 @@ class InfluxdbUdpConsumerTest {
         Map<String, String> conf = new HashMap<String, String>();
         conf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG, fakeFile);
         IOException exception = assertThrows(IOException.class, () -> consumerUnderTest.setGeneralConfiguration(conf));
-        assertEquals("Log configuration file 'fakeFile' does not exist", exception.getMessage());
+        assertEquals("Log configuration file '"+fakeFile+"' does not exist", exception.getMessage());
     }
 
     @Test
