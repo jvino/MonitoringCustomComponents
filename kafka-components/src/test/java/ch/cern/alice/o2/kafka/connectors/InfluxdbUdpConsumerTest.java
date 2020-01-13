@@ -1,28 +1,33 @@
 package ch.cern.alice.o2.kafka.connectors;
 
-import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import kafka.consumer.*;
+import kafka.javaapi.consumer.ConsumerConnector;
+import kafka.message.MessageAndMetadata;
+import kafka.serializer.StringDecoder;
+import kafka.server.KafkaConfig;
+import kafka.server.KafkaServerStartable;
+import org.apache.curator.test.TestingServer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 
 class InfluxdbUdpConsumerTest {
 
@@ -32,6 +37,9 @@ class InfluxdbUdpConsumerTest {
     String boostrapServers = "localhost:9092";
     String senderHostname = "localhost";
     String senderPorts = "1234,1235,1236";
+    String statsHostname = "localhost";
+    String statsPorts = "1111";
+    String statsPeriodS = "15";
 
     @Test
     void generalConfigurationBadLogKey() {
@@ -73,6 +81,14 @@ class InfluxdbUdpConsumerTest {
         }
         if (logFile.exists())
             logFile.delete();
+    }
+
+    @Test
+    void kafkaConfigurationNull() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        String expectedMsg = "Configuration file - kafka section - must be present";
+        Exception exception = assertThrows(Exception.class, () -> consumerUnderTest.setKafkaConfiguration(null));
+        assertEquals(expectedMsg, exception.getMessage());
     }
 
     @Test
@@ -177,6 +193,16 @@ class InfluxdbUdpConsumerTest {
         expectedKafkaProp.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         expectedKafkaProp.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         assertEquals(returnedKafkaPros, expectedKafkaProp);
+    
+    
+    }
+
+    @Test
+    void senderConfigurationNull() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        String expectedMsg = "Configuration file - sender section - must be present";
+        Exception exception = assertThrows(Exception.class, () -> consumerUnderTest.setSenderConfiguration(null));
+        assertEquals(expectedMsg, exception.getMessage());
     }
 
     @Test
@@ -215,13 +241,148 @@ class InfluxdbUdpConsumerTest {
         }
         int[] expertedSenderPorts = new int[]{1234,1235,1236};
         assertEquals(senderHostname, consumerUnderTest.getSenderHostname());
-        assertTrue(Arrays.equals(expertedSenderPorts,consumerUnderTest.getSenderPorts()));
-        assertTrue(true);
+        assertArrayEquals(expertedSenderPorts,consumerUnderTest.getSenderPorts());
     }
 
-    
+    @Test
+    void statsConfigurationNull() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        Map<String, String> conf = null;
+        try {
+            consumerUnderTest.setStatsConfiguration(conf);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+        assertTrue( ! consumerUnderTest.getStatsEnable());
+    }
+
+    @Test
+    void statsConfigurationNoDataProvided() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        Map<String, String> conf = new HashMap<String, String>();
+        try {
+            consumerUnderTest.setStatsConfiguration(conf);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+        assertTrue( !consumerUnderTest.getStatsEnable());
+    }
+
+    @Test
+    void statsConfigurationPartialDataProvided() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        Map<String, String> conf = new HashMap<String, String>();
+        conf.put(InfluxdbUdpConsumer.STATS_HOSTNAME_CONFIG, statsHostname);
+        conf.put(InfluxdbUdpConsumer.STATS_PORT_CONFIG, statsPorts);
+        try {
+            consumerUnderTest.setStatsConfiguration(conf);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+        assertTrue( !consumerUnderTest.getStatsEnable());
+    }
+
+    @Test
+    void statsConfigurationOK() {
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        Map<String, String> conf = new HashMap<String, String>();
+        conf.put(InfluxdbUdpConsumer.STATS_HOSTNAME_CONFIG, statsHostname);
+        conf.put(InfluxdbUdpConsumer.STATS_PORT_CONFIG, statsPorts);
+        conf.put(InfluxdbUdpConsumer.STATS_PERIOD_S, statsPeriodS);
+        try {
+            consumerUnderTest.setStatsConfiguration(conf);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+        assertTrue( consumerUnderTest.getStatsEnable());
+        assertEquals(statsHostname, consumerUnderTest.getStatsHostname(), "Stats Hostname not well configured");
+        assertEquals(statsPorts, consumerUnderTest.getStatsPort(), "Stats port not well configured");
+        assertEquals(statsPeriodS+"000", consumerUnderTest.getStatsPeriodMs(), "Stats period not well configured");
+    }
+
+    @Test
+    void YamlConfigurationNoStats() {
+        int num = (int) (Math.random() * 100000);
+        String yamlFilename = "/tmp/fake--yamlFile-" + num;
+        String logFilename = yamlFilename;
+        File yamlFile = new File(yamlFilename);
+        FileWriter myWriter;
+        try {
+            myWriter = new FileWriter(yamlFilename);
+            myWriter.write("general:\n  log4jfilename: "+logFilename+"\n\n");
+            myWriter.write("kafka_consumer_config:\n  topic: inputTopic\n  bootstrap.servers: localhost:9092\n\n");
+            myWriter.write("sender_config:\n  hostname: localhost\n  ports: 1234,1235,1236\n\n");
+            myWriter.close();
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        try {
+            consumerUnderTest.importYamlConfiguration(yamlFilename);
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+        Map<String, String> expectedGenConf = new HashMap<String, String>();
+        expectedGenConf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG, logFilename);
+        Map<String, String> expectedKafkaConf = new HashMap<String, String>();
+        expectedKafkaConf.put(InfluxdbUdpConsumer.KAFKA_TOPIC_CONFIG, "inputTopic");
+        expectedKafkaConf.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        Map<String, String> expectedSenderConf = new HashMap<String, String>();
+        expectedSenderConf.put(InfluxdbUdpConsumer.SENDER_HOSTNAME_CONFIG, "localhost");
+        expectedSenderConf.put(InfluxdbUdpConsumer.SENDER_PORTS_CONFIG, "1234,1235,1236");
+        assertEquals(expectedGenConf, consumerUnderTest.getGeneralConfig());
+        assertEquals(expectedKafkaConf, consumerUnderTest.getKafkaConfig());
+        assertEquals(expectedSenderConf, consumerUnderTest.getSenderConfig());
+        assertTrue( !consumerUnderTest.getStatsEnable());
+        if (yamlFile.exists()) yamlFile.delete();
+    }
+
+    @Test
+    void YamlConfigurationOK() {
+        int num = (int) (Math.random() * 100000);
+        String yamlFilename = "/tmp/fake--yamlFile-" + num;
+        String logFilename = yamlFilename;
+        File yamlFile = new File(yamlFilename);
+        FileWriter myWriter;
+        try {
+            myWriter = new FileWriter(yamlFilename);
+            myWriter.write("general:\n  log4jfilename: "+logFilename+"\n\n");
+            myWriter.write("kafka_consumer_config:\n  topic: inputTopic\n  bootstrap.servers: localhost:9092\n\n");
+            myWriter.write("sender_config:\n  hostname: localhost\n  ports: 1234,1235,1236\n\n");
+            myWriter.write("stats_config:\n  hostname: localhost\n  port: 1111\n  period.s: 25\n");
+            myWriter.close();
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+        InfluxdbUdpConsumer consumerUnderTest = new InfluxdbUdpConsumer();
+        try {
+            consumerUnderTest.importYamlConfiguration(yamlFilename);
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+        Map<String, String> expectedGenConf = new HashMap<String, String>();
+        expectedGenConf.put(InfluxdbUdpConsumer.GENERAL_LOG4J_CONFIG, logFilename);
+        Map<String, String> expectedKafkaConf = new HashMap<String, String>();
+        expectedKafkaConf.put(InfluxdbUdpConsumer.KAFKA_TOPIC_CONFIG, "inputTopic");
+        expectedKafkaConf.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        Map<String, String> expectedSenderConf = new HashMap<String, String>();
+        expectedSenderConf.put(InfluxdbUdpConsumer.SENDER_HOSTNAME_CONFIG, "localhost");
+        expectedSenderConf.put(InfluxdbUdpConsumer.SENDER_PORTS_CONFIG, "1234,1235,1236");
+        Map<String, String> expectedStatsConf = new HashMap<String, String>();
+        expectedStatsConf.put(InfluxdbUdpConsumer.STATS_HOSTNAME_CONFIG, "localhost");
+        expectedStatsConf.put(InfluxdbUdpConsumer.STATS_PORT_CONFIG, "1111");
+        expectedStatsConf.put(InfluxdbUdpConsumer.STATS_PERIOD_S, "25");
+        assertEquals(expectedGenConf, consumerUnderTest.getGeneralConfig());
+        assertEquals(expectedKafkaConf, consumerUnderTest.getKafkaConfig());
+        assertEquals(expectedSenderConf, consumerUnderTest.getSenderConfig());
+        assertEquals(expectedStatsConf, consumerUnderTest.getStatsConfig());
+        assertTrue( consumerUnderTest.getStatsEnable());
+        if (yamlFile.exists()) yamlFile.delete();
+    }
 
 
-    
+
+
+
 
 }

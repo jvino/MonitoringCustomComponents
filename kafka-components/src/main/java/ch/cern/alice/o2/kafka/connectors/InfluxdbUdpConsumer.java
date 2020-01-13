@@ -53,6 +53,7 @@ public class InfluxdbUdpConsumer {
 	private static int data_endpoint_ports_size = 0;
 	private static int data_endpoint_ports_index = 0;
 	private static int stats_endpoint_port = 0;
+	private static String stats_endpoint_hostname = "";
 	private static long receivedRecords = 0;
 	private static long sentRecords = 0;
 	private static long stats_period_ms = 0;
@@ -63,7 +64,7 @@ public class InfluxdbUdpConsumer {
 	private static InetAddress stats_address = null;
 	private static DatagramSocket datagramSocket;
 	private static String topicName = "";
-	private static boolean stats_enabled;
+	private static boolean stats_enabled = true;
 	private static KafkaConsumer<byte[], byte[]> consumer = null;
 
 	/* Stats parameters */
@@ -80,7 +81,7 @@ public class InfluxdbUdpConsumer {
 	static final int POLLING_PERIOD_MS = 50;
 
 	static final String GENERAL_LOG4J_CONFIG = "log4jfilename";
-	static final String KAFKA_TOPIC_CONFIG = "topic.input";
+	static final String KAFKA_TOPIC_CONFIG = "topic";
 	static final String SENDER_HOSTNAME_CONFIG = "hostname";
 	static final String SENDER_PORTS_CONFIG = "ports";
 	static final String STATS_HOSTNAME_CONFIG = "hostname";
@@ -93,7 +94,7 @@ public class InfluxdbUdpConsumer {
 	static Map<String, String> stats_config = null;
 	static Properties props = new Properties();
 
-	private static void importYamlConfiguration(String filename) throws IOException {
+	public void importYamlConfiguration(String filename) throws IOException {
 		File confFile = new File(filename);
 		if (!confFile.exists()) { 
 			throw new IOException("Configuration file does not exist.");
@@ -109,20 +110,23 @@ public class InfluxdbUdpConsumer {
 		try {
 			setGeneralConfiguration(general_config);
 		} catch (Exception e) {
+			e.printStackTrace();
 			logger.error(e.getMessage());
 			System.exit(1);
 		}
 		try {
 			setKafkaConfiguration(kafka_config);
 		} catch (Exception e) {
+			e.printStackTrace();
 			logger.error(e.getMessage());
-			System.exit(1);
+			System.exit(2);
 		}
 		try {
 			setSenderConfiguration(sender_config);
 		} catch (Exception e) {
+			e.printStackTrace();
 			logger.error(e.getMessage());
-			System.exit(1);
+			System.exit(3);
 		}
 		setStatsConfiguration(stats_config);
 	}
@@ -179,6 +183,9 @@ public class InfluxdbUdpConsumer {
 	}
 
 	public static void setKafkaConfiguration(Map<String, String> kafka_consumer_config) throws Exception {
+		if(kafka_consumer_config == null){
+			throw new Exception("Configuration file - kafka section - must be present");
+		}
 		if( !kafka_consumer_config.containsKey(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG)){
 			throw new Exception("Configuration file - kafka section - does not contain '"+ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG+"' key");
 		}
@@ -221,12 +228,16 @@ public class InfluxdbUdpConsumer {
 	}
 
 	public static void setSenderConfiguration( Map<String,String> sender_config) throws Exception {
+		if(sender_config == null){
+			throw new Exception("Configuration file - sender section - must be present");
+		}
 		if(!sender_config.containsKey(SENDER_HOSTNAME_CONFIG)){
 			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_HOSTNAME_CONFIG+"' key");
 		}
 		if(!sender_config.containsKey(SENDER_PORTS_CONFIG)){
 			throw new Exception("Configuration file - sender section - does not contain '"+SENDER_PORTS_CONFIG+"' key");
 		}
+		
 		data_endpoint_hostname = sender_config.get(SENDER_HOSTNAME_CONFIG);
 		data_endpoint_port_str = sender_config.get(SENDER_PORTS_CONFIG);
 		String[] data_endpoint_ports_str = data_endpoint_port_str.split(",");
@@ -246,6 +257,18 @@ public class InfluxdbUdpConsumer {
 		}
 	}
 
+	public String getStatsPeriodMs(){
+		return Long.toString(stats_period_ms); 
+	}
+
+	public String getStatsPort(){
+		return Integer.toString(stats_endpoint_port);
+	}
+
+	public String getStatsHostname(){
+		return stats_endpoint_hostname;
+	}
+
 	public static void setStatsConfiguration( Map<String,String> stats_config){
 		if( stats_config == null){
 			stats_enabled = false;
@@ -261,7 +284,7 @@ public class InfluxdbUdpConsumer {
 			return;
 		}
 
-		String stats_endpoint_hostname = stats_config.get(STATS_HOSTNAME_CONFIG);
+		stats_endpoint_hostname = stats_config.get(STATS_HOSTNAME_CONFIG);
 		stats_endpoint_port = Integer.parseInt(stats_config.get(STATS_PORT_CONFIG));
 		stats_period_ms = Integer.parseInt(stats_config.get(STATS_PERIOD_S))  * 1000;
 		stats_type = DEFAULT_STATS_TYPE;
